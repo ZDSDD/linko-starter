@@ -102,6 +102,9 @@ func (s *Store) Lookup(_ context.Context, short string) (string, error) {
 	short = strings.ToUpper(short)
 	shortcodeFilepath := filepath.Join(s.dir, short)
 	data, err := os.ReadFile(shortcodeFilepath)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", ErrNotFound
+	}
 	if err != nil {
 		fmt.Printf("failed to read %s: %v\n", shortcodeFilepath, err)
 		return "", err
