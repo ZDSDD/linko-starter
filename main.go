@@ -25,7 +25,12 @@ func main() {
 	cancel()
 	os.Exit(status)
 }
-func initializeLogger() *log.Logger {
+
+type closeFunc func() error
+
+func initializeLogger() (*log.Logger, closeFunc, error) {
+	var buffionWriter *bufio.Writer
+
 	logFileName, exists := os.LookupEnv("LINKO_LOG_FILE")
 	multiWriter := io.MultiWriter(os.Stderr)
 	if !exists {
@@ -35,17 +40,33 @@ func initializeLogger() *log.Logger {
 		if err != nil {
 			log.Fatal("Could not open log file: ", err)
 		}
-		multiWriter = io.MultiWriter(os.Stderr, bufio.NewWriterSize(file, 8192))
+		buffionWriter = bufio.NewWriterSize(file, 8192)
+		multiWriter = io.MultiWriter(os.Stderr, buffionWriter)
 	}
-	return log.New(multiWriter, "INFO: ", log.LstdFlags)
+	return log.New(multiWriter, "INFO: ", log.LstdFlags), func() error {
+		if buffionWriter != nil {
+			return buffionWriter.Flush()
+		}
+		return nil
+	}, nil
 }
 
 func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir string) int {
-	st, err := store.New(dataDir, initializeLogger())
+	logger, closeLogger, err := initializeLogger()
 	if err != nil {
 		return 1
 	}
-	s := newServer(*st, httpPort, cancel, initializeLogger())
+	defer func() {
+		if err := closeLogger(); err != nil {
+			log.Println(err)
+		}
+	}()
+
+	st, err := store.New(dataDir, logger)
+	if err != nil {
+		return 1
+	}
+	s := newServer(*st, httpPort, cancel, logger)
 	var serverErr error
 	go func() {
 		serverErr = s.start()
