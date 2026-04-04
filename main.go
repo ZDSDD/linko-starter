@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -23,17 +24,27 @@ func main() {
 	cancel()
 	os.Exit(status)
 }
+func initializeLogger() *log.Logger {
+	logFileName, exists := os.LookupEnv("LINKO_LOG_FILE")
+	multiWriter := io.MultiWriter(os.Stderr)
+	if !exists {
+		multiWriter = os.Stderr
+	} else {
+		file, err := os.OpenFile(logFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+		if err != nil {
+			log.Fatal("Could not open log file: ", err)
+		}
+		multiWriter = io.MultiWriter(os.Stderr, file)
+	}
+	return log.New(multiWriter, "INFO: ", log.LstdFlags)
+}
 
 func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir string) int {
-	file, err := os.OpenFile("linko.access.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-	if err != nil {
-		log.Fatal("Could not open log file: ", err)
-	}
-	st, err := store.New(dataDir, log.New(os.Stderr, "DEBUG: ", log.LstdFlags))
+	st, err := store.New(dataDir, initializeLogger())
 	if err != nil {
 		return 1
 	}
-	s := newServer(*st, httpPort, cancel, log.New(file, "INFO: ", log.LstdFlags))
+	s := newServer(*st, httpPort, cancel, initializeLogger())
 	var serverErr error
 	go func() {
 		serverErr = s.start()
