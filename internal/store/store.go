@@ -28,15 +28,17 @@ const (
 )
 
 type Store struct {
-	dir string
+	dir    string
+	logger *log.Logger
 }
 
-func New(dir string) (*Store, error) {
+func New(dir string, logger *log.Logger) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
 	return &Store{
-		dir: dir,
+		dir:    dir,
+		logger: logger,
 	}, nil
 }
 
@@ -85,12 +87,14 @@ func (s *Store) walk(ctx context.Context, ch chan<- ShortURL) {
 	defer close(ch)
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
+		s.logger.Printf("failed to read directory %s: %v\n", s.dir, err)
 		return
 	}
 	for _, e := range entries {
 		if !e.IsDir() {
 			long, err := s.Lookup(ctx, e.Name())
 			if err != nil {
+				s.logger.Printf("failed to lookup %s: %v\n", filepath.Join(s.dir, e.Name()), err)
 				ch <- ShortURL{Err: fmt.Errorf("read %s: %w", filepath.Join(s.dir, e.Name()), err)}
 				continue
 			}
@@ -107,7 +111,7 @@ func (s *Store) Lookup(_ context.Context, short string) (string, error) {
 		return "", ErrNotFound
 	}
 	if err != nil {
-		log.Printf("failed to read %s: %v\n", shortcodeFilepath, err)
+		s.logger.Printf("failed to read %s: %v\n", shortcodeFilepath, err)
 		return "", err
 	}
 	return string(data), nil
