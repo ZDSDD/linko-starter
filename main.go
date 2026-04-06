@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -28,6 +29,16 @@ func main() {
 
 type closeFunc func() error
 
+func replaceAttr(groups []string, a slog.Attr) slog.Attr {
+	if a.Key == "error" {
+		err, ok := a.Value.Any().(error)
+		if !ok {
+			return a
+		}
+		return slog.String("error", fmt.Sprintf("%+v", err))
+	}
+	return a
+}
 func initializeLogger() (*slog.Logger, closeFunc, error) {
 	var buffionWriter *bufio.Writer
 	var multiWriter io.Writer = os.Stderr
@@ -42,12 +53,14 @@ func initializeLogger() (*slog.Logger, closeFunc, error) {
 		multiWriter = io.MultiWriter(os.Stderr, buffionWriter)
 	}
 	debugHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level:       slog.LevelDebug,
+		ReplaceAttr: replaceAttr,
 	})
 
 	// slog requires a infoHandler to format the output
 	infoHandler := slog.NewJSONHandler(multiWriter, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level:       slog.LevelInfo,
+		ReplaceAttr: replaceAttr,
 	})
 
 	logger := slog.New(slog.NewMultiHandler(
