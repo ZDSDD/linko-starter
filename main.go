@@ -46,7 +46,7 @@ func initializeLogger() (*slog.Logger, closeFunc, error) {
 	})
 
 	// slog requires a infoHandler to format the output
-	infoHandler := slog.NewTextHandler(multiWriter, &slog.HandlerOptions{
+	infoHandler := slog.NewJSONHandler(multiWriter, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	})
 
