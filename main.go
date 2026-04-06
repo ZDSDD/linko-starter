@@ -41,13 +41,19 @@ func initializeLogger() (*slog.Logger, closeFunc, error) {
 		buffionWriter = bufio.NewWriterSize(file, 8192)
 		multiWriter = io.MultiWriter(os.Stderr, buffionWriter)
 	}
+	debugHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	})
 
-	// slog requires a handler to format the output
-	handler := slog.NewTextHandler(multiWriter, &slog.HandlerOptions{
+	// slog requires a infoHandler to format the output
+	infoHandler := slog.NewTextHandler(multiWriter, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	})
 
-	logger := slog.New(handler)
+	logger := slog.New(slog.NewMultiHandler(
+		debugHandler,
+		infoHandler,
+	))
 
 	cleanup := func() error {
 		if buffionWriter != nil {
