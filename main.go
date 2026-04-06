@@ -5,7 +5,7 @@ import (
 	"context"
 	"flag"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -28,27 +28,35 @@ func main() {
 
 type closeFunc func() error
 
-func initializeLogger() (*log.Logger, closeFunc, error) {
+func initializeLogger() (*slog.Logger, closeFunc, error) {
 	var buffionWriter *bufio.Writer
+	var multiWriter io.Writer = os.Stderr
 
 	logFileName, exists := os.LookupEnv("LINKO_LOG_FILE")
-	multiWriter := io.MultiWriter(os.Stderr)
-	if !exists {
-		multiWriter = os.Stderr
-	} else {
+	if exists {
 		file, err := os.OpenFile(logFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 		if err != nil {
-			log.Fatal("Could not open log file: ", err)
+			return nil, nil, err // Return the error instead of crashing
 		}
 		buffionWriter = bufio.NewWriterSize(file, 8192)
 		multiWriter = io.MultiWriter(os.Stderr, buffionWriter)
 	}
-	return log.New(multiWriter, "INFO: ", log.LstdFlags), func() error {
+
+	// slog requires a handler to format the output
+	handler := slog.NewTextHandler(multiWriter, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})
+
+	logger := slog.New(handler)
+
+	cleanup := func() error {
 		if buffionWriter != nil {
 			return buffionWriter.Flush()
 		}
 		return nil
-	}, nil
+	}
+
+	return logger, cleanup, nil
 }
 
 func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir string) int {
@@ -58,7 +66,7 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	}
 	defer func() {
 		if err := closeLogger(); err != nil {
-			log.Println(err)
+			logger.Error("failed to close logger", slog.Any("error", err))
 		}
 	}()
 

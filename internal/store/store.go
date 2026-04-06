@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,10 +29,10 @@ const (
 
 type Store struct {
 	dir    string
-	logger *log.Logger
+	logger *slog.Logger
 }
 
-func New(dir string, logger *log.Logger) (*Store, error) {
+func New(dir string, logger *slog.Logger) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -87,14 +87,14 @@ func (s *Store) walk(ctx context.Context, ch chan<- ShortURL) {
 	defer close(ch)
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
-		s.logger.Printf("failed to read directory %s: %v\n", s.dir, err)
+		s.logger.Error("failed to read directory", slog.String("dir", s.dir), slog.Any("error", err))
 		return
 	}
 	for _, e := range entries {
 		if !e.IsDir() {
 			long, err := s.Lookup(ctx, e.Name())
 			if err != nil {
-				s.logger.Printf("failed to lookup %s: %v\n", filepath.Join(s.dir, e.Name()), err)
+				s.logger.Error("failed to lookup", slog.String("file", filepath.Join(s.dir, e.Name())), slog.Any("error", err))
 				ch <- ShortURL{Err: fmt.Errorf("read %s: %w", filepath.Join(s.dir, e.Name()), err)}
 				continue
 			}
@@ -111,7 +111,7 @@ func (s *Store) Lookup(_ context.Context, short string) (string, error) {
 		return "", ErrNotFound
 	}
 	if err != nil {
-		s.logger.Printf("failed to read %s: %v\n", shortcodeFilepath, err)
+		s.logger.Error("failed to read file", slog.String("file", shortcodeFilepath), slog.Any("error", err))
 		return "", err
 	}
 	return string(data), nil
