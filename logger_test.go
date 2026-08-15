@@ -37,10 +37,11 @@ func Test_requestLogger(t *testing.T) {
 			t.Fatalf("failed to write response body: %v", err)
 		}
 	})
-	loggedHandler := requestLoggerMiddleware(s.authMiddleware(dummyHandler))
+	loggedHandler := requestIDMiddleware(requestLoggerMiddleware(s.authMiddleware(dummyHandler)))
 
 	req := httptest.NewRequest("POST", "http://lin.ko/api/stats", strings.NewReader("request"))
 	req.SetBasicAuth("frodo", "ofTheNineFingers")
+	req.Header.Set(requestIDHeader, "test-request-id")
 	rr := httptest.NewRecorder()
 	loggedHandler.ServeHTTP(rr, req)
 
@@ -48,12 +49,16 @@ func Test_requestLogger(t *testing.T) {
 	if rr.Code != expectedStatusCode {
 		t.Errorf("expected status code %d, got %d", expectedStatusCode, rr.Code)
 	}
+	if requestID := rr.Header().Get(requestIDHeader); requestID != "test-request-id" {
+		t.Errorf("expected response request ID %q, got %q", "test-request-id", requestID)
+	}
 
 	var logEntry struct {
 		Message           string `json:"msg"`
 		Method            string `json:"method"`
 		Path              string `json:"path"`
 		ClientIP          string `json:"client_ip"`
+		RequestID         string `json:"request_id"`
 		User              string `json:"user"`
 		Duration          *int64 `json:"duration"`
 		RequestBodyBytes  int    `json:"request_body_bytes"`
@@ -75,6 +80,9 @@ func Test_requestLogger(t *testing.T) {
 	}
 	if logEntry.ClientIP != "192.0.2.1:1234" {
 		t.Errorf("expected client IP %q, got %q", "192.0.2.1:1234", logEntry.ClientIP)
+	}
+	if logEntry.RequestID != "test-request-id" {
+		t.Errorf("expected request ID %q, got %q", "test-request-id", logEntry.RequestID)
 	}
 	if logEntry.User != "frodo" {
 		t.Errorf("expected user %q, got %q", "frodo", logEntry.User)
@@ -148,6 +156,7 @@ func Test_requestLoggerLogsHTTPErrors(t *testing.T) {
 			var logEntry struct {
 				Message        string `json:"msg"`
 				Path           string `json:"path"`
+				RequestID      string `json:"request_id"`
 				ResponseStatus int    `json:"response_status"`
 				Error          *struct {
 					Message    string `json:"message"`
@@ -162,6 +171,9 @@ func Test_requestLoggerLogsHTTPErrors(t *testing.T) {
 			}
 			if logEntry.Path != tt.path {
 				t.Errorf("expected path %q, got %q", tt.path, logEntry.Path)
+			}
+			if logEntry.RequestID == "" {
+				t.Error("expected a generated request ID in the request log")
 			}
 			if logEntry.ResponseStatus != tt.status {
 				t.Errorf("expected logged status %d, got %d", tt.status, logEntry.ResponseStatus)
