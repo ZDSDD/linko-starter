@@ -118,9 +118,13 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	if err != nil {
 		return 1
 	}
+	env := os.Getenv("ENV")
+	hostname, _ := os.Hostname()
 	logger = logger.With(
 		slog.String("git_sha", build.GitSHA),
 		slog.String("build_time", build.BuildTime),
+		slog.String("env", env),
+		slog.String("hostname", hostname),
 	)
 	defer func() {
 		if err := closeLogger(); err != nil {
