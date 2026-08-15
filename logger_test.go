@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"boot.dev/linko/internal/store"
 )
 
 func Test_requestLogger(t *testing.T) {
@@ -88,5 +90,91 @@ func Test_requestLogger(t *testing.T) {
 	}
 	if logEntry.ResponseBodyBytes != len("response") {
 		t.Errorf("expected %d response body bytes, got %d", len("response"), logEntry.ResponseBodyBytes)
+	}
+}
+
+func Test_requestLoggerLogsHTTPErrors(t *testing.T) {
+	tests := []struct {
+		name         string
+		method       string
+		path         string
+		username     string
+		password     string
+		status       int
+		errorMessage string
+		wantStack    bool
+	}{
+		{
+			name:         "not found",
+			method:       http.MethodGet,
+			path:         "/not-real",
+			status:       http.StatusNotFound,
+			errorMessage: "not found",
+		},
+		{
+			name:      "password validation error",
+			method:    http.MethodPost,
+			path:      "/api/login",
+			username:  "saruman",
+			password:  "invalidPassword",
+			status:    http.StatusInternalServerError,
+			wantStack: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logBuffer := &bytes.Buffer{}
+			logger := slog.New(slog.NewJSONHandler(logBuffer, &slog.HandlerOptions{
+				ReplaceAttr: replaceAttr,
+			}))
+			st, err := store.New(t.TempDir(), logger)
+			if err != nil {
+				t.Fatalf("failed to create store: %v", err)
+			}
+			s := newServer(*st, 0, func() {}, logger)
+
+			req := httptest.NewRequest(tt.method, "http://lin.ko"+tt.path, nil)
+			if tt.username != "" {
+				req.SetBasicAuth(tt.username, tt.password)
+			}
+			rr := httptest.NewRecorder()
+			s.httpServer.Handler.ServeHTTP(rr, req)
+
+			if rr.Code != tt.status {
+				t.Errorf("expected status %d, got %d", tt.status, rr.Code)
+			}
+
+			var logEntry struct {
+				Message        string `json:"msg"`
+				Path           string `json:"path"`
+				ResponseStatus int    `json:"response_status"`
+				Error          *struct {
+					Message    string `json:"message"`
+					StackTrace string `json:"stack_trace"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(logBuffer.Bytes(), &logEntry); err != nil {
+				t.Fatalf("failed to decode log entry: %v", err)
+			}
+			if logEntry.Message != "Served request" {
+				t.Errorf("expected request log, got %q", logEntry.Message)
+			}
+			if logEntry.Path != tt.path {
+				t.Errorf("expected path %q, got %q", tt.path, logEntry.Path)
+			}
+			if logEntry.ResponseStatus != tt.status {
+				t.Errorf("expected logged status %d, got %d", tt.status, logEntry.ResponseStatus)
+			}
+			if logEntry.Error == nil {
+				t.Fatal("expected structured error in request log")
+			}
+			if tt.errorMessage != "" && logEntry.Error.Message != tt.errorMessage {
+				t.Errorf("expected error message %q, got %q", tt.errorMessage, logEntry.Error.Message)
+			}
+			if gotStack := logEntry.Error.StackTrace != ""; gotStack != tt.wantStack {
+				t.Errorf("expected stack trace presence %t, got %t", tt.wantStack, gotStack)
+			}
+		})
 	}
 }
