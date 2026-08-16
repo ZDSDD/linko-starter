@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -16,7 +15,10 @@ import (
 	"boot.dev/linko/internal/build"
 	"boot.dev/linko/internal/linkoerr"
 	"boot.dev/linko/internal/store"
+	"github.com/lmittmann/tint"
+	"github.com/mattn/go-isatty"
 	pkgerr "github.com/pkg/errors"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 func main() {
@@ -75,21 +77,27 @@ func errorAttrs(err error) []slog.Attr {
 }
 
 func initializeLogger() (*slog.Logger, closeFunc, error) {
-	var buffionWriter *bufio.Writer
+	var rotatingLogger *lumberjack.Logger
 	var multiWriter io.Writer = os.Stderr
 
 	logFileName, exists := os.LookupEnv("LINKO_LOG_FILE")
 	if exists {
-		file, err := os.OpenFile(logFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-		if err != nil {
-			return nil, nil, err // Return the error instead of crashing
+		rotatingLogger = &lumberjack.Logger{
+			Filename:   logFileName,
+			MaxSize:    1,
+			MaxAge:     28,
+			MaxBackups: 10,
+			LocalTime:  false,
+			Compress:   true,
 		}
-		buffionWriter = bufio.NewWriterSize(file, 8192)
-		multiWriter = io.MultiWriter(os.Stderr, buffionWriter)
+		multiWriter = io.MultiWriter(os.Stderr, rotatingLogger)
 	}
-	debugHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+	stderrFD := os.Stderr.Fd()
+	colorEnabled := isatty.IsTerminal(stderrFD) || isatty.IsCygwinTerminal(stderrFD)
+	debugHandler := tint.NewTextHandler(os.Stderr, &tint.Options{
 		Level:       slog.LevelDebug,
 		ReplaceAttr: replaceAttr,
+		NoColor:     !colorEnabled,
 	})
 
 	// slog requires a infoHandler to format the output
@@ -104,8 +112,8 @@ func initializeLogger() (*slog.Logger, closeFunc, error) {
 	))
 
 	cleanup := func() error {
-		if buffionWriter != nil {
-			return buffionWriter.Flush()
+		if rotatingLogger != nil {
+			return rotatingLogger.Close()
 		}
 		return nil
 	}
