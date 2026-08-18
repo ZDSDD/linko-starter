@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -186,6 +188,40 @@ func Test_requestLoggerLogsHTTPErrors(t *testing.T) {
 			}
 			if gotStack := logEntry.Error.StackTrace != ""; gotStack != tt.wantStack {
 				t.Errorf("expected stack trace presence %t, got %t", tt.wantStack, gotStack)
+			}
+		})
+	}
+}
+
+func Test_httpErrorResponse(t *testing.T) {
+	tests := []struct {
+		name     string
+		status   int
+		wantBody string
+	}{
+		{name: "unauthorized", status: http.StatusUnauthorized, wantBody: "Unauthorized\n"},
+		{name: "forbidden", status: http.StatusForbidden, wantBody: "Forbidden\n"},
+		{name: "internal server error", status: http.StatusInternalServerError, wantBody: "Internal Server Error\n"},
+		{name: "bad request", status: http.StatusBadRequest, wantBody: "sensitive error details\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logCtx := &LogContext{}
+			ctx := context.WithValue(context.Background(), logContextKey, logCtx)
+			err := errors.New("sensitive error details")
+			rr := httptest.NewRecorder()
+
+			httpError(ctx, rr, tt.status, err)
+
+			if rr.Code != tt.status {
+				t.Errorf("expected status %d, got %d", tt.status, rr.Code)
+			}
+			if rr.Body.String() != tt.wantBody {
+				t.Errorf("expected body %q, got %q", tt.wantBody, rr.Body.String())
+			}
+			if !errors.Is(logCtx.Error, err) {
+				t.Errorf("expected original error in log context, got %v", logCtx.Error)
 			}
 		})
 	}
