@@ -103,6 +103,44 @@ func Test_requestLogger(t *testing.T) {
 	}
 }
 
+func Test_replaceAttrRedactsSensitiveData(t *testing.T) {
+	tests := []struct {
+		name string
+		attr slog.Attr
+		want string
+	}{
+		{
+			name: "sensitive key",
+			attr: slog.String("password", "OpenSesame"),
+			want: "[REDACTED]",
+		},
+		{
+			name: "user key",
+			attr: slog.String("user", "frodo"),
+			want: "[REDACTED]",
+		},
+		{
+			name: "password in URL",
+			attr: slog.String("long_url", "https://frodo:OpenSesame@example.com/path"),
+			want: "https://frodo:%5BREDACTED%5D@example.com/path",
+		},
+		{
+			name: "URL without password",
+			attr: slog.String("long_url", "https://example.com/path"),
+			want: "https://example.com/path",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := replaceAttr(nil, tt.attr)
+			if got.Value.String() != tt.want {
+				t.Errorf("replaceAttr value = %q, want %q", got.Value.String(), tt.want)
+			}
+		})
+	}
+}
+
 func Test_redactIP(t *testing.T) {
 	tests := []struct {
 		name    string
