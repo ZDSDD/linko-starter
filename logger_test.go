@@ -80,8 +80,8 @@ func Test_requestLogger(t *testing.T) {
 	if logEntry.Path != "/api/stats" {
 		t.Errorf("expected path %q, got %q", "/api/stats", logEntry.Path)
 	}
-	if logEntry.ClientIP != "192.0.2.1:1234" {
-		t.Errorf("expected client IP %q, got %q", "192.0.2.1:1234", logEntry.ClientIP)
+	if logEntry.ClientIP != "192.0.2.x" {
+		t.Errorf("expected client IP %q, got %q", "192.0.2.x", logEntry.ClientIP)
 	}
 	if logEntry.RequestID != "test-request-id" {
 		t.Errorf("expected request ID %q, got %q", "test-request-id", logEntry.RequestID)
@@ -100,6 +100,27 @@ func Test_requestLogger(t *testing.T) {
 	}
 	if logEntry.ResponseBodyBytes != len("response") {
 		t.Errorf("expected %d response body bytes, got %d", len("response"), logEntry.ResponseBodyBytes)
+	}
+}
+
+func Test_redactIP(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		want    string
+	}{
+		{name: "IPv4 with port", address: "192.168.1.42:12345", want: "192.168.1.x"},
+		{name: "IPv4 without port", address: "127.0.0.1", want: "127.0.0.x"},
+		{name: "IPv6 with port", address: "[2001:db8::1]:12345", want: "[2001:db8::1]:12345"},
+		{name: "invalid address", address: "not-an-ip:12345", want: "not-an-ip:12345"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := redactIP(tt.address); got != tt.want {
+				t.Errorf("redactIP(%q) = %q, want %q", tt.address, got, tt.want)
+			}
+		})
 	}
 }
 

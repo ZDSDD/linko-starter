@@ -24,6 +24,21 @@ type server struct {
 
 const requestIDHeader = "X-Request-ID"
 
+func redactIP(address string) string {
+	host := address
+	if splitHost, _, err := net.SplitHostPort(address); err == nil {
+		host = splitHost
+	}
+
+	ip := net.ParseIP(host)
+	ipv4 := ip.To4()
+	if ipv4 == nil {
+		return address
+	}
+
+	return fmt.Sprintf("%d.%d.%d.x", ipv4[0], ipv4[1], ipv4[2])
+}
+
 func requestIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID := r.Header.Get(requestIDHeader)
@@ -104,7 +119,7 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			logAttrs := []any{
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
-				slog.String("client_ip", r.RemoteAddr),
+				slog.String("client_ip", redactIP(r.RemoteAddr)),
 				slog.String("request_id", r.Header.Get(requestIDHeader)),
 				slog.Duration("duration", time.Since(start)),
 				slog.Int("request_body_bytes", spyReader.bytesRead),
